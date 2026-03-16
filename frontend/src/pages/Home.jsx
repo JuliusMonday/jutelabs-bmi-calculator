@@ -450,7 +450,7 @@ export default function Home() {
       <footer className="mt-12 py-8 border-t border-gray-100 bg-white/50">
         <div className="max-w-6xl mx-auto px-6 text-center">
           <p className="text-sm text-gray-500">
-            © 2024 JuTeLabs Medical AI. For educational purposes only.
+            © 2025 JuTeLabs Medical AI. For educational purposes only.
           </p>
           <p className="text-xs text-teal-600 font-semibold mt-2">
             Powered by JuTeLabs Technology
