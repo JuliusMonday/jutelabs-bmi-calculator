@@ -73,7 +73,18 @@ def analyze_health(data: BmiRequest):
     """
     
     try:
-        response = model.generate_content(prompt)
+        # Priority: Gemini 2.0 Flash
+        try:
+            response = model.generate_content(prompt)
+        except exceptions.ResourceExhausted:
+            print("Gemini 2.0 Quota Exceeded. Attempting fallback to 2.5-flash...")
+            try:
+                fallback_model = genai.GenerativeModel('gemini-2.5-flash')
+                response = fallback_model.generate_content(prompt)
+            except exceptions.ResourceExhausted:
+                print("Gemini 2.5 Quota Exceeded. Attempting fallback to gemini-flash-latest...")
+                fallback_model_2 = genai.GenerativeModel('gemini-flash-latest')
+                response = fallback_model_2.generate_content(prompt)
         
         # --- 3. SAFETY CLEANER ---
         # Removes quotes and whitespace from the start/end
@@ -86,9 +97,12 @@ def analyze_health(data: BmiRequest):
         return {"bmi": bmi, "advice": cleaned_advice}
         
     except exceptions.ResourceExhausted:
-        print("CRITICAL: Gemini API Quota Exceeded!")
-        raise HTTPException(status_code=429, detail="AI Quota exceeded. Please wait a minute.")
+        print("CRITICAL: All Gemini API Quotas Exceeded!")
+        raise HTTPException(status_code=429, detail="AI Quota exceeded. Please wait a minute or check your API key.")
+    except exceptions.InvalidArgument:
+        raise HTTPException(status_code=400, detail="Invalid request parameters.")
     except Exception as e:
+        print(f"Internal AI Error: {str(e)}")
         raise HTTPException(status_code=500, detail=str(e))
 
 @app.post("/convert-height")
