@@ -48,7 +48,14 @@ cd frontend
 npm install
 npm run dev
 ```
-
+**Terminal 3: AI Service**
+```bash
+cd ai-service
+python -m venv .venv
+source .venv/Scripts/activate
+pip install -r requirements.txt
+python -m uvicorn main:app --reload --port 8000
+```
 ## Troubleshooting
 - **API Error**: Ensure your Google API Key is valid and has access to Gemini 2.0.
 - **Connection Refused**: Ensure the backend is running on port 5001.

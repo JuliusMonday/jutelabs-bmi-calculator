@@ -44,7 +44,7 @@ export default function Home() {
     setConverting(true);
     
     try {
-      const response = await axios.post('http://localhost:5001/api/convert-height', {
+      const response = await axios.post('http://localhost:5000/api/convert-height', {
         feet: feet || 0,
         inches: inches || 0
       });
@@ -90,7 +90,7 @@ export default function Home() {
     setError(null);
 
     try {
-      const response = await axios.post('http://localhost:5001/api/calculate', {
+      const response = await axios.post('http://localhost:5000/api/calculate', {
         weight: weightNum,
         height: heightNum
       });
@@ -103,7 +103,7 @@ export default function Home() {
     } catch (err) {
       console.error('API Error:', err);
       if (err.code === 'ERR_NETWORK') {
-        setError('Unable to connect to the server. Please ensure the backend is running on localhost:5001');
+        setError('Unable to connect to the server. Please ensure the backend is running on localhost:5000');
       } else {
         setError(err.response?.data?.message || 'Something went wrong. Please try again.');
       }
