@@ -1,60 +1,75 @@
-import React, { useState } from 'react';
-import axios from 'axios';
-import { motion, AnimatePresence } from 'framer-motion';
-import { 
-  HeartPulse, 
-  Weight, 
-  Ruler, 
-  ArrowRight, 
+import React, { useState } from "react";
+import axios from "axios";
+import { motion as Motion, AnimatePresence } from "framer-motion";
+import {
+  HeartPulse,
+  Weight,
+  Ruler,
+  ArrowRight,
   Sparkles,
   Shield,
   Zap,
   RefreshCw,
   ArrowRightLeft,
-  Calculator
-} from 'lucide-react';
-import { Card } from '@/components/ui/card';
-import { Button } from '@/components/ui/button';
-import { Input } from '@/components/ui/input';
-import { Label } from '@/components/ui/label';
-import LoadingSpinner from '@/components/medical/LoadingSpinner';
-import BMIResultCard from '@/components/medical/BMIResultCard';
-import AIAdviceCard from '@/components/medical/AIAdviceCard';
-import ErrorToast from '@/components/medical/ErrorToast';
+  Calculator,
+} from "lucide-react";
+import { Card } from "@/components/ui/card";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import LoadingSpinner from "@/components/medical/LoadingSpinner";
+import BMIResultCard from "@/components/medical/BMIResultCard";
+import AIAdviceCard from "@/components/medical/AIAdviceCard";
+import ErrorToast from "@/components/medical/ErrorToast";
 
 export default function Home() {
-  const [weight, setWeight] = useState('');
-  const [height, setHeight] = useState('');
+  const [weight, setWeight] = useState("");
+  const [height, setHeight] = useState("");
   const [loading, setLoading] = useState(false);
   const [result, setResult] = useState(null);
   const [error, setError] = useState(null);
-  
+
+  const apiBaseUrl =
+    import.meta.env.VITE_API_BASE_URL?.replace(/\/$/, "") || "";
+
   // Height converter state
-  const [feet, setFeet] = useState('');
-  const [inches, setInches] = useState('');
+  const [feet, setFeet] = useState("");
+  const [inches, setInches] = useState("");
   const [convertedHeight, setConvertedHeight] = useState(null);
   const [converting, setConverting] = useState(false);
 
   const handleConvertHeight = async () => {
     if (!feet && !inches) {
-      setError('Please enter feet and/or inches to convert');
+      setError("Please enter feet and/or inches to convert");
       return;
     }
-    
+
+    setError(null);
     setConverting(true);
-    
+
     try {
-      const response = await axios.post('http://localhost:5000/api/convert-height', {
-        feet: feet || 0,
-        inches: inches || 0
-      });
+      const response = await axios.post(
+        `${apiBaseUrl || ""}/api/convert-height`,
+        {
+          feet: feet || 0,
+          inches: inches || 0,
+        },
+      );
 
       if (response.data.success) {
         setConvertedHeight(response.data.meters);
+      } else {
+        setError(
+          response.data?.error || "Failed to convert height. Please try again.",
+        );
       }
     } catch (err) {
-      console.error('Conversion Error:', err);
-      setError('Failed to convert height. Please try again.');
+      console.error("Conversion Error:", err);
+      setError(
+        err.response?.data?.error ||
+          err.response?.data?.message ||
+          "Failed to convert height. Please try again.",
+      );
     } finally {
       setConverting(false);
     }
@@ -64,24 +79,29 @@ export default function Home() {
     if (convertedHeight) {
       setHeight(convertedHeight.toString());
       setConvertedHeight(null);
-      setFeet('');
-      setInches('');
+      setFeet("");
+      setInches("");
     }
   };
 
   const handleSubmit = async (e) => {
     e.preventDefault();
-    
+
     if (!weight || !height) {
-      setError('Please enter both weight and height');
+      setError("Please enter both weight and height");
       return;
     }
 
     const weightNum = parseFloat(weight);
     const heightNum = parseFloat(height);
 
-    if (isNaN(weightNum) || isNaN(heightNum) || weightNum <= 0 || heightNum <= 0) {
-      setError('Please enter valid positive numbers');
+    if (
+      isNaN(weightNum) ||
+      isNaN(heightNum) ||
+      weightNum <= 0 ||
+      heightNum <= 0
+    ) {
+      setError("Please enter valid positive numbers");
       return;
     }
 
@@ -90,22 +110,28 @@ export default function Home() {
     setError(null);
 
     try {
-      const response = await axios.post('http://localhost:5000/api/calculate', {
+      const response = await axios.post(`${apiBaseUrl || ""}/api/calculate`, {
         weight: weightNum,
-        height: heightNum
+        height: heightNum,
       });
 
       if (response.data.success) {
         setResult(response.data.report);
       } else {
-        setError('Failed to generate report. Please try again.');
+        setError("Failed to generate report. Please try again.");
       }
     } catch (err) {
-      console.error('API Error:', err);
-      if (err.code === 'ERR_NETWORK') {
-        setError('Unable to connect to the server. Please ensure the backend is running on localhost:5000');
+      console.error("API Error:", err);
+      if (err.code === "ERR_NETWORK") {
+        setError(
+          "Unable to connect to the server. Please ensure the backend is running on localhost:5000",
+        );
       } else {
-        setError(err.response?.data?.message || 'Something went wrong. Please try again.');
+        setError(
+          err.response?.data?.error ||
+            err.response?.data?.message ||
+            "Something went wrong. Please try again.",
+        );
       }
     } finally {
       setLoading(false);
@@ -113,8 +139,8 @@ export default function Home() {
   };
 
   const handleReset = () => {
-    setWeight('');
-    setHeight('');
+    setWeight("");
+    setHeight("");
     setResult(null);
     setError(null);
   };
@@ -130,9 +156,9 @@ export default function Home() {
           <div className="absolute top-10 left-10 w-72 h-72 bg-white rounded-full blur-3xl" />
           <div className="absolute bottom-10 right-10 w-96 h-96 bg-emerald-300 rounded-full blur-3xl" />
         </div>
-        
+
         <div className="relative max-w-6xl mx-auto px-6 py-16 md:py-24">
-          <motion.div
+          <Motion.div
             initial={{ opacity: 0, y: 20 }}
             animate={{ opacity: 1, y: 0 }}
             transition={{ duration: 0.6 }}
@@ -148,10 +174,10 @@ export default function Home() {
             </div>
             <p className="text-xl text-teal-100 font-medium mb-2">Medical AI</p>
             <p className="text-teal-200/80 max-w-xl mx-auto">
-              Advanced BMI analysis powered by artificial intelligence. 
-              Get personalized nutrition recommendations in seconds.
+              Advanced BMI analysis powered by artificial intelligence. Get
+              personalized nutrition recommendations in seconds.
             </p>
-          </motion.div>
+          </Motion.div>
         </div>
 
         {/* Wave separator */}
@@ -168,23 +194,30 @@ export default function Home() {
       {/* Main Content */}
       <div className="max-w-6xl mx-auto px-6 py-12 -mt-4">
         <div className="grid lg:grid-cols-2 gap-12 items-start">
-          
           {/* Left Column - Input Form */}
-          <motion.div
+          <Motion.div
             initial={{ opacity: 0, x: -20 }}
             animate={{ opacity: 1, x: 0 }}
             transition={{ duration: 0.6, delay: 0.2 }}
           >
             <Card className="p-8 bg-white/80 backdrop-blur-sm border-0 shadow-xl rounded-3xl">
               <div className="mb-8">
-                <h2 className="text-2xl font-bold text-gray-800 mb-2">Calculate Your BMI</h2>
-                <p className="text-gray-500">Enter your measurements to receive your personalized health report</p>
+                <h2 className="text-2xl font-bold text-gray-800 mb-2">
+                  Calculate Your BMI
+                </h2>
+                <p className="text-gray-500">
+                  Enter your measurements to receive your personalized health
+                  report
+                </p>
               </div>
 
               <form onSubmit={handleSubmit} className="space-y-6">
                 {/* Weight Input */}
                 <div className="space-y-2">
-                  <Label htmlFor="weight" className="text-sm font-semibold text-gray-700 flex items-center space-x-2">
+                  <Label
+                    htmlFor="weight"
+                    className="text-sm font-semibold text-gray-700 flex items-center space-x-2"
+                  >
                     <Weight className="w-4 h-4 text-teal-600" />
                     <span>Weight</span>
                   </Label>
@@ -201,13 +234,18 @@ export default function Home() {
                       disabled={loading}
                       className="h-14 pl-5 pr-16 text-lg rounded-xl border-gray-200 focus:border-teal-500 focus:ring-teal-500/20 transition-all"
                     />
-                    <span className="absolute right-5 top-1/2 -translate-y-1/2 text-gray-400 font-medium">kg</span>
+                    <span className="absolute right-5 top-1/2 -translate-y-1/2 text-gray-400 font-medium">
+                      kg
+                    </span>
                   </div>
                 </div>
 
                 {/* Height Input */}
                 <div className="space-y-2">
-                  <Label htmlFor="height" className="text-sm font-semibold text-gray-700 flex items-center space-x-2">
+                  <Label
+                    htmlFor="height"
+                    className="text-sm font-semibold text-gray-700 flex items-center space-x-2"
+                  >
                     <Ruler className="w-4 h-4 text-teal-600" />
                     <span>Height</span>
                   </Label>
@@ -224,7 +262,9 @@ export default function Home() {
                       disabled={loading}
                       className="h-14 pl-5 pr-16 text-lg rounded-xl border-gray-200 focus:border-teal-500 focus:ring-teal-500/20 transition-all"
                     />
-                    <span className="absolute right-5 top-1/2 -translate-y-1/2 text-gray-400 font-medium">m</span>
+                    <span className="absolute right-5 top-1/2 -translate-y-1/2 text-gray-400 font-medium">
+                      m
+                    </span>
                   </div>
                 </div>
 
@@ -254,15 +294,21 @@ export default function Home() {
                 <div className="flex flex-wrap gap-3">
                   <div className="flex items-center space-x-2 px-3 py-1.5 bg-teal-50 rounded-full">
                     <Zap className="w-3.5 h-3.5 text-teal-600" />
-                    <span className="text-xs font-medium text-teal-700">AI Powered</span>
+                    <span className="text-xs font-medium text-teal-700">
+                      AI Powered
+                    </span>
                   </div>
                   <div className="flex items-center space-x-2 px-3 py-1.5 bg-emerald-50 rounded-full">
                     <Shield className="w-3.5 h-3.5 text-emerald-600" />
-                    <span className="text-xs font-medium text-emerald-700">Private & Secure</span>
+                    <span className="text-xs font-medium text-emerald-700">
+                      Private & Secure
+                    </span>
                   </div>
                   <div className="flex items-center space-x-2 px-3 py-1.5 bg-blue-50 rounded-full">
                     <HeartPulse className="w-3.5 h-3.5 text-blue-600" />
-                    <span className="text-xs font-medium text-blue-700">Medical Grade</span>
+                    <span className="text-xs font-medium text-blue-700">
+                      Medical Grade
+                    </span>
                   </div>
                 </div>
               </div>
@@ -276,7 +322,9 @@ export default function Home() {
                 </div>
                 <div>
                   <h3 className="font-bold text-gray-800">Height Converter</h3>
-                  <p className="text-xs text-gray-500">Don't know your height in meters? Convert it here!</p>
+                  <p className="text-xs text-gray-500">
+                    Don't know your height in meters? Convert it here!
+                  </p>
                 </div>
               </div>
 
@@ -284,7 +332,10 @@ export default function Home() {
                 <div className="grid grid-cols-2 gap-4">
                   {/* Feet Input */}
                   <div className="space-y-2">
-                    <Label htmlFor="feet" className="text-sm font-medium text-gray-600">
+                    <Label
+                      htmlFor="feet"
+                      className="text-sm font-medium text-gray-600"
+                    >
                       Feet
                     </Label>
                     <div className="relative">
@@ -299,13 +350,18 @@ export default function Home() {
                         disabled={converting}
                         className="h-12 pl-4 pr-12 rounded-xl border-amber-200 focus:border-amber-500 focus:ring-amber-500/20 bg-white"
                       />
-                      <span className="absolute right-4 top-1/2 -translate-y-1/2 text-gray-400 text-sm font-medium">ft</span>
+                      <span className="absolute right-4 top-1/2 -translate-y-1/2 text-gray-400 text-sm font-medium">
+                        ft
+                      </span>
                     </div>
                   </div>
 
                   {/* Inches Input */}
                   <div className="space-y-2">
-                    <Label htmlFor="inches" className="text-sm font-medium text-gray-600">
+                    <Label
+                      htmlFor="inches"
+                      className="text-sm font-medium text-gray-600"
+                    >
                       Inches
                     </Label>
                     <div className="relative">
@@ -321,7 +377,9 @@ export default function Home() {
                         disabled={converting}
                         className="h-12 pl-4 pr-12 rounded-xl border-amber-200 focus:border-amber-500 focus:ring-amber-500/20 bg-white"
                       />
-                      <span className="absolute right-4 top-1/2 -translate-y-1/2 text-gray-400 text-sm font-medium">in</span>
+                      <span className="absolute right-4 top-1/2 -translate-y-1/2 text-gray-400 text-sm font-medium">
+                        in
+                      </span>
                     </div>
                   </div>
                 </div>
@@ -348,16 +406,21 @@ export default function Home() {
 
                 {/* Converted Result */}
                 {convertedHeight && (
-                  <motion.div
+                  <Motion.div
                     initial={{ opacity: 0, y: 10 }}
                     animate={{ opacity: 1, y: 0 }}
                     className="p-4 bg-white rounded-xl border border-amber-200 shadow-sm"
                   >
                     <div className="flex items-center justify-between">
                       <div>
-                        <p className="text-xs text-gray-500 mb-1">Converted Height</p>
+                        <p className="text-xs text-gray-500 mb-1">
+                          Converted Height
+                        </p>
                         <p className="text-2xl font-bold text-amber-600">
-                          {convertedHeight} <span className="text-base font-normal text-gray-500">meters</span>
+                          {convertedHeight}{" "}
+                          <span className="text-base font-normal text-gray-500">
+                            meters
+                          </span>
                         </p>
                       </div>
                       <Button
@@ -370,7 +433,7 @@ export default function Home() {
                         Use This
                       </Button>
                     </div>
-                  </motion.div>
+                  </Motion.div>
                 )}
 
                 <p className="text-xs text-center text-gray-400">
@@ -378,10 +441,10 @@ export default function Home() {
                 </p>
               </div>
             </Card>
-          </motion.div>
+          </Motion.div>
 
           {/* Right Column - Results */}
-          <motion.div
+          <Motion.div
             initial={{ opacity: 0, x: 20 }}
             animate={{ opacity: 1, x: 0 }}
             transition={{ duration: 0.6, delay: 0.3 }}
@@ -389,7 +452,7 @@ export default function Home() {
           >
             <AnimatePresence mode="wait">
               {loading ? (
-                <motion.div
+                <Motion.div
                   key="loading"
                   initial={{ opacity: 0, scale: 0.95 }}
                   animate={{ opacity: 1, scale: 1 }}
@@ -398,9 +461,9 @@ export default function Home() {
                   <Card className="p-8 bg-white/80 backdrop-blur-sm border-0 shadow-xl rounded-3xl">
                     <LoadingSpinner />
                   </Card>
-                </motion.div>
+                </Motion.div>
               ) : result ? (
-                <motion.div
+                <Motion.div
                   key="results"
                   initial={{ opacity: 0, y: 20 }}
                   animate={{ opacity: 1, y: 0 }}
@@ -409,7 +472,7 @@ export default function Home() {
                 >
                   <BMIResultCard bmiScore={result.bmi} />
                   <AIAdviceCard advice={result.advice} />
-                  
+
                   <Button
                     onClick={handleReset}
                     variant="outline"
@@ -418,9 +481,9 @@ export default function Home() {
                     <RefreshCw className="w-4 h-4 mr-2" />
                     Calculate Again
                   </Button>
-                </motion.div>
+                </Motion.div>
               ) : (
-                <motion.div
+                <Motion.div
                   key="empty"
                   initial={{ opacity: 0 }}
                   animate={{ opacity: 1 }}
@@ -435,14 +498,15 @@ export default function Home() {
                         Your Results Will Appear Here
                       </h3>
                       <p className="text-gray-500 max-w-sm mx-auto">
-                        Enter your weight and height to receive your personalized BMI score and AI-powered nutrition advice.
+                        Enter your weight and height to receive your
+                        personalized BMI score and AI-powered nutrition advice.
                       </p>
                     </div>
                   </Card>
-                </motion.div>
+                </Motion.div>
               )}
             </AnimatePresence>
-          </motion.div>
+          </Motion.div>
         </div>
       </div>
 

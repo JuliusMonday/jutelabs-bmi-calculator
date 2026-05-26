@@ -1,37 +1,105 @@
 import os
+import re
+import time
+from datetime import datetime
+from pathlib import Path
+import logging
 from dotenv import load_dotenv
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 import google.generativeai as genai
 from google.api_core import exceptions
 
 load_dotenv()
 
+logging.basicConfig(
+    level=os.getenv("AI_SERVICE_LOG_LEVEL", "INFO"),
+    format="%(asctime)s %(levelname)s %(message)s",
+)
+logger = logging.getLogger(__name__)
+
 app = FastAPI()
 
-# --- 1. CORS CONFIGURATION (Essential for React) ---
+allowed_origins_env = os.getenv(
+    "AI_SERVICE_ALLOWED_ORIGINS",
+    "http://localhost:5173,http://127.0.0.1:5173"
+)
+allowed_origins = [origin.strip() for origin in allowed_origins_env.split(",") if origin.strip()]
+
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"], # Allows all origins. In production, change to your React URL.
-    allow_credentials=True,
-    allow_methods=["*"],
-    allow_headers=["*"],
+    allow_origins=allowed_origins,
+    allow_credentials=False,
+    allow_methods=["GET", "POST"],
+    allow_headers=["Content-Type"],
 )
 
 api_key = os.getenv("GOOGLE_API_KEY")
+if not api_key:
+    raise RuntimeError("GOOGLE_API_KEY environment variable is required for the AI service.")
 genai.configure(api_key=api_key)
 
-# Using gemini-2.0-flash-exp as it is confirmed to work (though currently rate limited)
-model = genai.GenerativeModel('gemini-2.0-flash')
+MODEL_NAME = os.getenv("AI_MODEL", "gemini-2.0-flash")
+model = genai.GenerativeModel(MODEL_NAME)
+
+CACHE_TTL_SECONDS = int(os.getenv("AI_CACHE_TTL_SECONDS", "300"))
+CACHE_MAX_ENTRIES = int(os.getenv("AI_CACHE_MAX_ENTRIES", "200"))
+analysis_cache = {}
+
+PROMPT_FILE_PATH = Path(__file__).resolve().parent / "prompt_template.txt"
+
+if not PROMPT_FILE_PATH.exists():
+    raise RuntimeError(f"Prompt template file not found at {PROMPT_FILE_PATH}")
+
+PROMPT_TEMPLATE = PROMPT_FILE_PATH.read_text(encoding="utf-8").strip()
 
 class BmiRequest(BaseModel):
-    weight_kg: float
-    height_m: float
+    weight_kg: float = Field(..., gt=0, le=635)
+    height_m: float = Field(..., gt=0.3, le=3.0)
 
 class HeightRequest(BaseModel):
-    feet: float
-    inches: float
+    feet: float = Field(..., ge=0, le=8)
+    inches: float = Field(..., ge=0, lt=12)
+
+
+def _cleanup_cache():
+    now = time.time()
+    expired_keys = [key for key, (timestamp, _, _) in analysis_cache.items() if now - timestamp > CACHE_TTL_SECONDS]
+    for key in expired_keys:
+        analysis_cache.pop(key, None)
+    if len(analysis_cache) > CACHE_MAX_ENTRIES:
+        oldest_entries = sorted(analysis_cache.items(), key=lambda item: item[1][0])
+        for key, _ in oldest_entries[: len(analysis_cache) - CACHE_MAX_ENTRIES]:
+            analysis_cache.pop(key, None)
+
+
+def _cache_key(weight_kg: float, height_m: float) -> str:
+    return f"{weight_kg:.2f}:{height_m:.3f}"
+
+
+def _get_cached_response(weight_kg: float, height_m: float):
+    _cleanup_cache()
+    key = _cache_key(weight_kg, height_m)
+    entry = analysis_cache.get(key)
+    if not entry:
+        return None
+    _, bmi, advice = entry
+    return bmi, advice
+
+
+def _set_cached_response(weight_kg: float, height_m: float, bmi: float, advice: str):
+    _cleanup_cache()
+    key = _cache_key(weight_kg, height_m)
+    analysis_cache[key] = (time.time(), bmi, advice)
+
+
+def _sanitize_ai_response(raw_text: str) -> str:
+    cleaned = raw_text.strip().strip('"')
+    if re.match(r'^(here is\b|here\'s\b)', cleaned.strip().lower()):
+        first_line, _, rest = cleaned.partition('\n')
+        cleaned = rest.strip() if rest else cleaned
+    return cleaned
 
 @app.post("/analyze-health")
 def analyze_health(data: BmiRequest):
@@ -39,75 +107,62 @@ def analyze_health(data: BmiRequest):
     # Changed from 2 to 1 so 5.19 becomes 5.2 to match the AI's logic
     bmi = round(data.weight_kg / (data.height_m * data.height_m), 1)
     
-    doctor_name = "Dr. JuTe" 
+    doctor_name = "Dr. JuTe"
+    prompt = PROMPT_TEMPLATE.format(doctor_name=doctor_name, bmi=bmi)
 
-    prompt = f"""
-    Act as {doctor_name}, a Senior Biochemist at JuTeLabs Technology. 
-    You are speaking directly to a patient. Your tone is empathetic, professional, and scientifically grounded.
-    
-    The patient has a BMI of {bmi}.
-    
-    1. **Introduction:** - Start by introducing yourself as "{doctor_name} from JuTeLabs Technology".
-       - Address the patient directly using "You".
-    
-    2. **Diagnosis:** - State their clinical weight status clearly (e.g., "You are currently in the Overweight category").
-    
-    3. **Metabolic Analysis:** Explain what is happening inside *their* body at a cellular level.
-       - If BMI is high (>25), explain to them how excess adipose tissue might be causing **Insulin Resistance**, **Lipid Peroxidation**, or **Chronic Inflammation**.
-       - If BMI is normal, explain how their **Glycolysis** and **Lipolysis** pathways are working efficiently.
-       - If BMI is low, explain **Catabolism** and the risk of muscle wasting.
-       - *Crucial:* Explain this simply but accurately, as if teaching them about their own biology.
-       
-    4. **Biochemical Advice:** - Give 3 strict but manageable lifestyle changes to optimize their specific metabolic state (e.g., "We need to lower your cortisol spikes...").
-    
-    5. **The JuTeLabs Prescription (Diet):** - Suggest a specific Nigerian Breakfast, Lunch, and Dinner.
-       - Focus on functional foods (e.g., "Eat Unripe Plantain for its low Glycemic Index").
-    
-    6. **Ethical Closing:** - Remind them that while this analysis is based on biochemistry, they should consult a physical doctor for severe symptoms.
-    
-    IMPORTANT OUTPUT RULES:
-    1. Start the response IMMEDIATELY with the greeting: "Hello. I'm {doctor_name}..."
-    2. Do NOT use introductory text like "Here is how I would address the patient."
-    3. Do NOT wrap the entire response in quotation marks.
-    4. Do NOT use local Nigerian greetings or slang (Standard English only).
-    """
-    
+    cache_hit = _get_cached_response(data.weight_kg, data.height_m)
+    if cache_hit:
+        cached_bmi, cached_advice = cache_hit
+        return {"bmi": cached_bmi, "advice": cached_advice}
+
     try:
         # Priority: Gemini 2.0 Flash
         try:
             response = model.generate_content(prompt)
         except exceptions.ResourceExhausted:
-            print("Gemini 2.0 Quota Exceeded. Attempting fallback to 2.5-flash...")
+            logger.warning("Gemini 2.0 quota exceeded; attempting fallback to 2.5-flash.")
             try:
                 fallback_model = genai.GenerativeModel('gemini-2.5-flash')
                 response = fallback_model.generate_content(prompt)
             except exceptions.ResourceExhausted:
-                print("Gemini 2.5 Quota Exceeded. Attempting fallback to gemini-flash-latest...")
-                fallback_model_2 = genai.GenerativeModel('gemini-flash-latest')
-                response = fallback_model_2.generate_content(prompt)
-        
-        # --- 3. SAFETY CLEANER ---
-        # Removes quotes and whitespace from the start/end
-        cleaned_advice = response.text.strip().strip('"')
-        
-        # Double check to remove accidental conversational intros
-        if "Here is" in cleaned_advice:
-             cleaned_advice = cleaned_advice.split("\n", 1)[-1].strip()
-             
-        return {"bmi": bmi, "advice": cleaned_advice}
-        
+                logger.warning("Gemini 2.5 quota exceeded; attempting fallback to gemini-flash-latest.")
+                try:
+                    fallback_model_2 = genai.GenerativeModel('gemini-flash-latest')
+                    response = fallback_model_2.generate_content(prompt)
+                except exceptions.ResourceExhausted:
+                    raise
+
+        if response is None:
+            raise HTTPException(status_code=502, detail='AI model did not return a valid response.')
+
+        advice_text = getattr(response, 'text', None)
+        if not isinstance(advice_text, str):
+            raise HTTPException(status_code=502, detail='Invalid AI response format.')
+
+        cleaned_advice = _sanitize_ai_response(advice_text)
+        _set_cached_response(data.weight_kg, data.height_m, bmi, cleaned_advice)
+        return {'bmi': bmi, 'advice': cleaned_advice}
     except exceptions.ResourceExhausted:
-        print("CRITICAL: All Gemini API Quotas Exceeded!")
-        raise HTTPException(status_code=429, detail="AI Quota exceeded. Please wait a minute or check your API key.")
+        logger.error("All Gemini API quotas exhausted.")
+        raise HTTPException(status_code=429, detail="AI quota exceeded. Please wait a minute or check your API key.")
     except exceptions.InvalidArgument:
+        logger.warning("Invalid AI request parameters.")
         raise HTTPException(status_code=400, detail="Invalid request parameters.")
+    except HTTPException:
+        raise
     except Exception as e:
-        print(f"Internal AI Error: {str(e)}")
-        raise HTTPException(status_code=500, detail=str(e))
+        logger.exception("Internal AI Error: %s", str(e))
+        raise HTTPException(status_code=500, detail="Internal AI service error.")
 
 @app.post("/convert-height")
 def convert_height(data: HeightRequest):
-    # 1 foot = 0.3048 meters
-    # 1 inch = 0.0254 meters
     meters = (data.feet * 0.3048) + (data.inches * 0.0254)
     return {"meters": round(meters, 2)}
+
+@app.get("/health")
+def health():
+    return {
+        "status": "ok",
+        "service": "ai-service",
+        "timestamp": datetime.utcnow().isoformat() + "Z",
+    }
